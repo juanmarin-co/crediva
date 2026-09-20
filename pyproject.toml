@@ -1,0 +1,17 @@
+[project]
+name = "lending-interest-rates"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Juan Marín", email = "13415603+juanmarin-co@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+lending-interest-rates = "lending_interest_rates:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
