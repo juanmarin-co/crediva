@@ -15,7 +15,7 @@ from ..storage.parquet_manifest import (
 from ..storage.raw_manifest import RawManifestStorage
 from ..storage.raw_pages import RawPage, ReportingDateCount
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MEMORY_LIMIT = "8GB"
 Progress = Callable[[str, dict[str, object]], None]
 
@@ -285,7 +285,7 @@ def write_changed_months(
                 entity_code ASC NULLS LAST
         ) TO {sql_literal(str(output_directory))} (
             FORMAT PARQUET,
-            COMPRESSION SNAPPY,
+            COMPRESSION ZSTD,
             PARTITION_BY (reporting_year, reporting_month),
             FILENAME_PATTERN 'data',
             RETURN_STATS

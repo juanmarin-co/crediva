@@ -100,6 +100,11 @@ def test_convert_writes_a_monthly_analytical_partition(tmp_path: Path) -> None:
     }
     assert physical_schema["weighted_average_effective_rate"] == "INT32"
     assert physical_schema["disbursed_amount"] == "INT64"
+    compression = duckdb.sql(
+        "SELECT DISTINCT compression FROM parquet_metadata(?)",
+        params=[str(partition)],
+    ).fetchall()
+    assert compression == [("ZSTD",)]
     assert read_parquet_rows(partition) == [
         {
             "credit_product": "Libranza",

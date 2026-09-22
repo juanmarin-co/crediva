@@ -80,7 +80,7 @@ data/parquet/
         └── data.parquet
 ```
 
-Each partition contains one canonical file with all business rows for that month. Socrata IDs, versions, timestamps, and source labels remain in raw storage and are not projected into Parquet. Conversion fails if historical and recent contain the same reporting date, because removing provenance would otherwise make those rows ambiguous. When raw data changes, conversion compares the page metadata recorded in `data/parquet/manifest.json` with the raw manifest, uses the `reporting_dates` index to read the exact candidate pages, rebuilds only affected months in staging, validates their expected row counts, and atomically replaces their `data.parquet` files. No content fingerprint is maintained.
+Each partition contains one canonical Zstandard-compressed Parquet file with all business rows for that month. Socrata IDs, versions, timestamps, and source labels remain in raw storage and are not projected into Parquet. Conversion fails if historical and recent contain the same reporting date, because removing provenance would otherwise make those rows ambiguous. When raw data changes, conversion compares the page metadata recorded in `data/parquet/manifest.json` with the raw manifest, uses the `reporting_dates` index to read the exact candidate pages, rebuilds only affected months in staging, validates their expected row counts, and atomically replaces their `data.parquet` files. No content fingerprint is maintained.
 
 ### Schema
 
