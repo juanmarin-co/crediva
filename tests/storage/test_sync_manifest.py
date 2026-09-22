@@ -1,8 +1,8 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-from lending_interest_rates.storage.raw import StoredPage
+from lending_interest_rates.storage.raw import ReportingDateCount, StoredPage
 from lending_interest_rates.storage.sync_manifest import (
     HistoricalState,
     RecentState,
@@ -20,6 +20,7 @@ def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
         first_id="row-first",
         last_id="row-last",
         downloaded_at=timestamp,
+        reporting_dates=(ReportingDateCount(date(2026, 6, 26), 50_000),),
     )
     recent_page = StoredPage(
         path="recent/current/page-00000001.csv.gz",
@@ -28,6 +29,7 @@ def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
         first_id="row-recent-first",
         last_id="row-recent-last",
         downloaded_at=timestamp,
+        reporting_dates=(ReportingDateCount(date(2026, 9, 11), 2),),
     )
     manifest = SyncManifest(
         updated_at=timestamp,
@@ -41,7 +43,7 @@ def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
 
     assert storage.load() == manifest
     assert json.loads(path.read_text()) == {
-        "version": 1,
+        "version": 2,
         "updated_at": "2026-09-21T00:00:00+00:00",
         "sources": {
             "historical": {
@@ -55,6 +57,7 @@ def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
                         "first_id": "row-first",
                         "last_id": "row-last",
                         "downloaded_at": "2026-09-21T00:00:00+00:00",
+                        "reporting_dates": {"2026-06-26": 50000},
                     }
                 ],
             },
@@ -69,6 +72,7 @@ def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
                         "first_id": "row-recent-first",
                         "last_id": "row-recent-last",
                         "downloaded_at": "2026-09-21T00:00:00+00:00",
+                        "reporting_dates": {"2026-09-11": 2},
                     }
                 ],
             },

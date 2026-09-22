@@ -19,12 +19,24 @@ class Socrata:
     def __init__(self) -> None:
         self.operations: list[tuple[str, str | None]] = []
         self.historical_pages = {
-            None: compressed(b":id,value\nrow-h1,1\nrow-h2,2\n"),
-            "row-h2": compressed(b":id,value\nrow-h3,3\n"),
+            None: compressed(
+                b":id,fecha_corte,value\n"
+                b"row-h1,2026-06-19T00:00:00.000,1\n"
+                b"row-h2,2026-06-19T00:00:00.000,2\n"
+            ),
+            "row-h2": compressed(
+                b":id,fecha_corte,value\nrow-h3,2026-06-26T00:00:00.000,3\n"
+            ),
         }
         self.recent_pages = {
-            None: compressed(b":id,value\nrow-r1,1\nrow-r2,2\n"),
-            "row-r2": compressed(b":id,value\nrow-r3,3\n"),
+            None: compressed(
+                b":id,fecha_corte,value\n"
+                b"row-r1,2026-09-04T00:00:00.000,1\n"
+                b"row-r2,2026-09-04T00:00:00.000,2\n"
+            ),
+            "row-r2": compressed(
+                b":id,fecha_corte,value\nrow-r3,2026-09-11T00:00:00.000,3\n"
+            ),
         }
 
     async def newest_id(self, dataset: Dataset) -> str:
@@ -101,13 +113,17 @@ async def test_pull_checkpoints_each_historical_page_before_fetching_the_next(
             limit: int,
         ) -> AsyncIterator[bytes]:
             if dataset.name == "recent" and after_id is None:
-                yield compressed(b":id,value\nrow-r3,3\n")
+                yield compressed(
+                    b":id,fecha_corte,value\nrow-r3,2026-09-11T00:00:00.000,3\n"
+                )
             elif dataset.name == "recent":
-                yield compressed(b":id,value\n")
+                yield compressed(b":id,fecha_corte,value\n")
             elif after_id is None:
-                yield compressed(b":id,value\nrow-h1,1\n")
+                yield compressed(
+                    b":id,fecha_corte,value\nrow-h1,2026-06-26T00:00:00.000,1\n"
+                )
             else:
-                yield compressed(b":id,value\n")
+                yield compressed(b":id,fecha_corte,value\n")
                 raise ConnectionError("response ended early")
 
     manifests = SyncManifestStorage(tmp_path / "manifest.json")
@@ -154,7 +170,7 @@ async def test_pull_skips_unchanged_recent_and_resumes_historical(
             limit: int,
         ) -> AsyncIterator[bytes]:
             self.operations.append((dataset.name, after_id))
-            yield compressed(b":id,value\n")
+            yield compressed(b":id,fecha_corte,value\n")
 
     unchanged = Unchanged()
     await pull(
@@ -234,7 +250,9 @@ async def test_pull_preserves_current_recent_when_next_download_fails(
             limit: int,
         ) -> AsyncIterator[bytes]:
             if dataset.name == "recent" and after_id is None:
-                yield compressed(b":id,value\nrow-r4,4\n")
+                yield compressed(
+                    b":id,fecha_corte,value\nrow-r4,2026-09-18T00:00:00.000,4\n"
+                )
                 return
             raise ConnectionError("recent page failed")
             yield b"unreachable"

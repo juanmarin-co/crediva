@@ -42,7 +42,7 @@ data/raw/
 
 Both sources are stored in gzip-compressed CSV pages of at most 50,000 records, ordered by Socrata's intrinsic `:id`. Socrata's gzip response bytes are persisted directly without client decompression or local recompression. Query pages preserve API field names and the `:id`, `:version`, `:created_at`, and `:updated_at` system columns.
 
-The manifest records the path, size, row count, ID boundaries, and download time of every active page. Historical also records its append cursor, while recent records the newest ID used for change detection. File and manifest writes use `.partial` files and atomic replacement.
+The manifest records the path, size, row count, ID boundaries, download time, and exact row counts by `fecha_corte` for every active page. These reporting-date counts form an index for selecting the minimal raw-page set needed to rebuild a monthly projection; synchronization still relies only on intrinsic IDs. Historical also records its append cursor, while recent records the newest ID used for change detection. File and manifest writes use `.partial` files and atomic replacement.
 
 ## Synchronization protocol
 

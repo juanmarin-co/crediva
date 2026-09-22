@@ -1,10 +1,17 @@
 import csv
 import gzip
 import shutil
+from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class ReportingDateCount:
+    reporting_date: date
+    row_count: int
 
 
 @dataclass(frozen=True)
@@ -15,6 +22,7 @@ class StoredPage:
     first_id: str
     last_id: str
     downloaded_at: datetime
+    reporting_dates: tuple[ReportingDateCount, ...]
 
 
 class RawStorage:
@@ -84,7 +92,7 @@ class RawStorage:
             with partial.open("wb") as stream:
                 async for chunk in content:
                     stream.write(chunk)
-            row_count, first_id, last_id = inspect_page(partial)
+            row_count, first_id, last_id, reporting_dates = inspect_page(partial)
             if first_id is None or last_id is None:
                 partial.unlink()
                 return None
@@ -99,25 +107,57 @@ class RawStorage:
             first_id=first_id,
             last_id=last_id,
             downloaded_at=self.clock(),
+            reporting_dates=reporting_dates,
         )
 
 
-def inspect_page(path: Path) -> tuple[int, str | None, str | None]:
+def inspect_page(
+    path: Path,
+) -> tuple[
+    int,
+    str | None,
+    str | None,
+    tuple[ReportingDateCount, ...],
+]:
     row_count = 0
     first_id: str | None = None
     last_id: str | None = None
+    reporting_date_counts: Counter[date] = Counter()
     with gzip.open(path, "rt", encoding="utf-8-sig", newline="") as stream:
         rows = csv.reader(stream)
         header = next(rows, None)
         if header is None or ":id" not in header:
             raise ValueError("CSV page does not contain the :id system column")
+        if "fecha_corte" not in header:
+            raise ValueError("CSV page does not contain the fecha_corte column")
         id_index = header.index(":id")
+        reporting_date_index = header.index("fecha_corte")
         for row in rows:
             if len(row) <= id_index or not row[id_index]:
                 raise ValueError("CSV page contains an empty :id")
+            if len(row) <= reporting_date_index or not row[reporting_date_index]:
+                raise ValueError("CSV page contains an empty fecha_corte")
             row_id = row[id_index]
             if first_id is None:
                 first_id = row_id
             last_id = row_id
+            try:
+                reporting_date = datetime.fromisoformat(
+                    row[reporting_date_index]
+                ).date()
+            except ValueError as error:
+                raise ValueError(
+                    f"CSV page contains an invalid fecha_corte: "
+                    f"{row[reporting_date_index]}"
+                ) from error
+            reporting_date_counts[reporting_date] += 1
             row_count += 1
-    return row_count, first_id, last_id
+    return (
+        row_count,
+        first_id,
+        last_id,
+        tuple(
+            ReportingDateCount(reporting_date, count)
+            for reporting_date, count in sorted(reporting_date_counts.items())
+        ),
+    )
