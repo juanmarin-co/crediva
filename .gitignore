@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Test artifacts
+.coverage
+htmlcov/
+
+# Downloaded data and pull logs
+data/
