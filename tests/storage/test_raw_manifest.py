@@ -2,42 +2,42 @@ import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from lending_interest_rates.storage.raw import ReportingDateCount, StoredPage
-from lending_interest_rates.storage.sync_manifest import (
-    HistoricalState,
-    RecentState,
-    SyncManifest,
-    SyncManifestStorage,
+from lending_interest_rates.storage.raw_manifest import (
+    HistoricalSourceState,
+    RawManifest,
+    RawManifestStorage,
+    RecentSourceState,
 )
+from lending_interest_rates.storage.raw_pages import RawPage, ReportingDateCount
 
 
-def test_round_trips_the_atomic_sync_manifest(tmp_path: Path) -> None:
+def test_round_trips_the_atomic_raw_manifest(tmp_path: Path) -> None:
     timestamp = datetime(2026, 9, 21, tzinfo=UTC)
-    historical_page = StoredPage(
+    historical_page = RawPage(
         path="historical/pages/page-00000001.csv.gz",
         row_count=50_000,
-        size=42,
+        size_bytes=42,
         first_id="row-first",
         last_id="row-last",
         downloaded_at=timestamp,
         reporting_dates=(ReportingDateCount(date(2026, 6, 26), 50_000),),
     )
-    recent_page = StoredPage(
+    recent_page = RawPage(
         path="recent/current/page-00000001.csv.gz",
         row_count=2,
-        size=24,
+        size_bytes=24,
         first_id="row-recent-first",
         last_id="row-recent-last",
         downloaded_at=timestamp,
         reporting_dates=(ReportingDateCount(date(2026, 9, 11), 2),),
     )
-    manifest = SyncManifest(
+    manifest = RawManifest(
         updated_at=timestamp,
-        historical=HistoricalState("w9zh-vetq", "row-last", (historical_page,)),
-        recent=RecentState("qzsc-9esp", "row-recent-last", (recent_page,)),
+        historical=HistoricalSourceState("w9zh-vetq", "row-last", (historical_page,)),
+        recent=RecentSourceState("qzsc-9esp", "row-recent-last", (recent_page,)),
     )
     path = tmp_path / "manifest.json"
-    storage = SyncManifestStorage(path)
+    storage = RawManifestStorage(path)
 
     storage.save(manifest)
 

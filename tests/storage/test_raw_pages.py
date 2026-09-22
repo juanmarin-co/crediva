@@ -3,10 +3,10 @@ from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from lending_interest_rates.storage.raw import (
-    RawStorage,
+from lending_interest_rates.storage.raw_pages import (
+    RawPage,
+    RawPageStorage,
     ReportingDateCount,
-    StoredPage,
 )
 
 
@@ -18,7 +18,7 @@ async def chunks(*values: bytes) -> AsyncIterator[bytes]:
 async def test_writes_and_describes_a_historical_page_atomically(
     tmp_path: Path,
 ) -> None:
-    storage = RawStorage(
+    storage = RawPageStorage(
         tmp_path,
         clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
     )
@@ -31,10 +31,10 @@ async def test_writes_and_describes_a_historical_page_atomically(
 
     page = await storage.write_historical_page(1, chunks(compressed))
 
-    assert page == StoredPage(
+    assert page == RawPage(
         path="historical/pages/page-00000001.csv.gz",
         row_count=2,
-        size=len(compressed),
+        size_bytes=len(compressed),
         first_id="row-first",
         last_id="row-last",
         downloaded_at=datetime(2026, 9, 21, tzinfo=UTC),
@@ -48,7 +48,7 @@ async def test_writes_and_describes_a_historical_page_atomically(
 
 
 async def test_writes_a_recent_page_into_next(tmp_path: Path) -> None:
-    storage = RawStorage(
+    storage = RawPageStorage(
         tmp_path,
         clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
     )
@@ -57,10 +57,10 @@ async def test_writes_a_recent_page_into_next(tmp_path: Path) -> None:
 
     page = await storage.write_recent_page(1, chunks(compressed))
 
-    assert page == StoredPage(
+    assert page == RawPage(
         path="recent/next/page-00000001.csv.gz",
         row_count=1,
-        size=len(compressed),
+        size_bytes=len(compressed),
         first_id="row-current",
         last_id="row-current",
         downloaded_at=datetime(2026, 9, 21, tzinfo=UTC),
@@ -73,7 +73,7 @@ async def test_writes_a_recent_page_into_next(tmp_path: Path) -> None:
 async def test_activates_recent_next_and_preserves_current_until_cleanup(
     tmp_path: Path,
 ) -> None:
-    storage = RawStorage(tmp_path)
+    storage = RawPageStorage(tmp_path)
     current = tmp_path / "recent" / "current"
     current.mkdir(parents=True)
     (current / "page-00000001.csv.gz").write_bytes(b"old")
@@ -84,7 +84,7 @@ async def test_activates_recent_next_and_preserves_current_until_cleanup(
     next_page = await storage.write_recent_page(1, chunks(compressed))
     assert next_page is not None
 
-    active_pages = storage.activate_recent((next_page,))
+    active_pages = storage.activate_next_recent_generation((next_page,))
 
     assert active_pages[0].path == "recent/current/page-00000001.csv.gz"
     assert gzip.decompress((tmp_path / active_pages[0].path).read_bytes()) == (
@@ -92,6 +92,6 @@ async def test_activates_recent_next_and_preserves_current_until_cleanup(
     )
     assert (tmp_path / "recent/previous/page-00000001.csv.gz").read_bytes() == b"old"
 
-    storage.discard_previous_recent()
+    storage.discard_previous_recent_generation()
 
     assert not (tmp_path / "recent/previous").exists()

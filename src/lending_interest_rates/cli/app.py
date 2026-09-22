@@ -6,10 +6,11 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..commands.convert import convert
 from ..commands.pull import pull
 from ..socrata.client import API_ROOT, Dataset, open_client
-from ..storage.raw import RawStorage
-from ..storage.sync_manifest import SyncManifestStorage
+from ..storage.raw_manifest import RawManifestStorage
+from ..storage.raw_pages import RawPageStorage
 
 DATASETS = (
     Dataset("recent", "qzsc-9esp"),
@@ -21,6 +22,12 @@ DATASETS = (
 class PullOptions:
     raw_path: Path
     api_root: str
+
+
+@dataclass(frozen=True)
+class ConvertOptions:
+    raw_path: Path
+    parquet_path: Path
 
 
 Command = Callable[[argparse.Namespace], Awaitable[int]]
@@ -41,7 +48,29 @@ def parser() -> argparse.ArgumentParser:
     pull_parser.set_defaults(command=run_pull_command)
     pull_parser.add_argument("--raw-path", type=Path, default=Path("data/raw"))
     pull_parser.add_argument("--api-root", default=API_ROOT, help=argparse.SUPPRESS)
+    convert_parser = subcommands.add_parser(
+        "convert", help="convert raw data to Parquet"
+    )
+    convert_parser.set_defaults(command=run_convert_command)
+    convert_parser.add_argument("--raw-path", type=Path, default=Path("data/raw"))
+    convert_parser.add_argument(
+        "--parquet-path", type=Path, default=Path("data/parquet")
+    )
     return command
+
+
+async def run_convert_command(args: argparse.Namespace) -> int:
+    return run_convert(ConvertOptions(args.raw_path, args.parquet_path))
+
+
+def run_convert(options: ConvertOptions) -> int:
+    convert(
+        raw_path=options.raw_path,
+        parquet_path=options.parquet_path,
+        progress=report_progress,
+    )
+    log("COMPLETE", manifest=options.parquet_path / "manifest.json")
+    return 0
 
 
 async def run_pull_command(args: argparse.Namespace) -> int:
@@ -62,8 +91,8 @@ async def run_pull(options: PullOptions) -> int:
                 historical=datasets["historical"],
                 recent=datasets["recent"],
                 socrata=socrata,
-                raw=RawStorage(options.raw_path),
-                manifests=SyncManifestStorage(options.raw_path / "manifest.json"),
+                raw_pages=RawPageStorage(options.raw_path),
+                manifest_storage=RawManifestStorage(options.raw_path / "manifest.json"),
                 progress=report_progress,
             )
     except asyncio.CancelledError as error:

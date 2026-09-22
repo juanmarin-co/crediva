@@ -14,7 +14,25 @@ def test_help_lists_available_commands(capsys) -> None:
     assert raised.value.code == 0
     output = capsys.readouterr().out
     assert "pull" in output
-    assert "convert" not in output
+    assert "convert" in output
+
+
+def test_convert_accepts_storage_paths(tmp_path: Path) -> None:
+    raw_path = tmp_path / "raw"
+    parquet_path = tmp_path / "parquet"
+
+    args = parser().parse_args(
+        [
+            "convert",
+            "--raw-path",
+            str(raw_path),
+            "--parquet-path",
+            str(parquet_path),
+        ]
+    )
+
+    assert args.raw_path == raw_path
+    assert args.parquet_path == parquet_path
 
 
 def test_pull_accepts_the_raw_storage_path(tmp_path: Path) -> None:

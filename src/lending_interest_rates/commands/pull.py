@@ -3,13 +3,13 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from ..socrata.client import Dataset, SocrataClient
-from ..storage.raw import RawStorage
-from ..storage.sync_manifest import (
-    HistoricalState,
-    RecentState,
-    SyncManifest,
-    SyncManifestStorage,
+from ..storage.raw_manifest import (
+    HistoricalSourceState,
+    RawManifest,
+    RawManifestStorage,
+    RecentSourceState,
 )
+from ..storage.raw_pages import RawPageStorage
 
 PAGE_SIZE = 50_000
 Progress = Callable[[str, dict[str, object]], None]
@@ -24,32 +24,46 @@ async def pull(
     historical: Dataset,
     recent: Dataset,
     socrata: SocrataClient,
-    raw: RawStorage,
-    manifests: SyncManifestStorage,
+    raw_pages: RawPageStorage,
+    manifest_storage: RawManifestStorage,
     page_size: int = PAGE_SIZE,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     progress: Progress = ignore_progress,
 ) -> None:
-    manifest = initialize_manifest(
-        manifests.load(),
+    manifest = initialize_raw_manifest(
+        manifest_storage.load(),
         historical=historical,
         recent=recent,
         updated_at=clock(),
     )
-    manifests.save(manifest)
+    manifest_storage.save(manifest)
 
     for page in manifest.recent.pages:
-        if not raw.is_complete(page):
+        if not raw_pages.is_complete(page):
             raise ValueError(f"Missing recent page: {page.path}")
+    progress("CHECK", {"dataset": recent.name, "operation": "newest_id"})
     newest_id = await socrata.newest_id(recent)
-    if newest_id != manifest.recent.newest_id:
-        raw.discard_recent_next()
+    if newest_id == manifest.recent.newest_id:
+        progress(
+            "UP_TO_DATE",
+            {"dataset": recent.name, "newest_id": newest_id},
+        )
+    else:
+        progress(
+            "CHANGED",
+            {
+                "dataset": recent.name,
+                "previous_newest_id": manifest.recent.newest_id,
+                "newest_id": newest_id,
+            },
+        )
+        raw_pages.discard_next_recent_generation()
         next_pages = []
         cursor = None
         while True:
             page_number = len(next_pages) + 1
             started_at = datetime.now(UTC)
-            page = await raw.write_recent_page(
+            page = await raw_pages.write_recent_page(
                 page_number,
                 socrata.stream_page_csv(
                     recent,
@@ -69,7 +83,7 @@ async def pull(
                     "dataset": recent.name,
                     "page": page_number,
                     "rows": page.row_count,
-                    "bytes": page.size,
+                    "bytes": page.size_bytes,
                     "last_id": page.last_id,
                     "elapsed_s": elapsed_seconds(started_at),
                 },
@@ -77,23 +91,31 @@ async def pull(
             if page.row_count < page_size:
                 break
 
-        active_pages = raw.activate_recent(tuple(next_pages))
+        active_pages = raw_pages.activate_next_recent_generation(tuple(next_pages))
         manifest = replace(
             manifest,
             updated_at=clock(),
-            recent=RecentState(recent.dataset_id, newest_id, active_pages),
+            recent=RecentSourceState(recent.dataset_id, newest_id, active_pages),
         )
-        manifests.save(manifest)
-        raw.discard_previous_recent()
+        manifest_storage.save(manifest)
+        raw_pages.discard_previous_recent_generation()
 
     historical_state = manifest.historical
     for page in historical_state.pages:
-        if not raw.is_complete(page):
+        if not raw_pages.is_complete(page):
             raise ValueError(f"Missing historical page: {page.path}")
     while True:
         page_number = len(historical_state.pages) + 1
         started_at = datetime.now(UTC)
-        page = await raw.write_historical_page(
+        progress(
+            "CHECK",
+            {
+                "dataset": historical.name,
+                "operation": "page_after_id",
+                "after_id": historical_state.cursor,
+            },
+        )
+        page = await raw_pages.write_historical_page(
             page_number,
             socrata.stream_page_csv(
                 historical,
@@ -102,6 +124,13 @@ async def pull(
             ),
         )
         if page is None:
+            progress(
+                "UP_TO_DATE",
+                {
+                    "dataset": historical.name,
+                    "cursor": historical_state.cursor,
+                },
+            )
             break
         historical_state = replace(
             historical_state,
@@ -113,14 +142,14 @@ async def pull(
             updated_at=clock(),
             historical=historical_state,
         )
-        manifests.save(manifest)
+        manifest_storage.save(manifest)
         progress(
             "PAGE",
             {
                 "dataset": historical.name,
                 "page": page_number,
                 "rows": page.row_count,
-                "bytes": page.size,
+                "bytes": page.size_bytes,
                 "last_id": page.last_id,
                 "elapsed_s": elapsed_seconds(started_at),
             },
@@ -129,18 +158,18 @@ async def pull(
             break
 
 
-def initialize_manifest(
-    current: SyncManifest | None,
+def initialize_raw_manifest(
+    current: RawManifest | None,
     *,
     historical: Dataset,
     recent: Dataset,
     updated_at: datetime,
-) -> SyncManifest:
+) -> RawManifest:
     if current is None:
-        return SyncManifest(
+        return RawManifest(
             updated_at=updated_at,
-            historical=HistoricalState(historical.dataset_id, None),
-            recent=RecentState(recent.dataset_id, None),
+            historical=HistoricalSourceState(historical.dataset_id, None),
+            recent=RecentSourceState(recent.dataset_id, None),
         )
     if current.historical.dataset_id != historical.dataset_id:
         raise ValueError(

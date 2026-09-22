@@ -7,8 +7,8 @@ import pytest
 
 from lending_interest_rates.commands.pull import pull
 from lending_interest_rates.socrata.client import Dataset
-from lending_interest_rates.storage.raw import RawStorage
-from lending_interest_rates.storage.sync_manifest import SyncManifestStorage
+from lending_interest_rates.storage.raw_manifest import RawManifestStorage
+from lending_interest_rates.storage.raw_pages import RawPageStorage
 
 
 def compressed(value: bytes) -> bytes:
@@ -59,18 +59,18 @@ class Socrata:
 
 async def test_pull_bootstraps_recent_then_historical_pages(tmp_path: Path) -> None:
     socrata = Socrata()
-    manifests = SyncManifestStorage(tmp_path / "manifest.json")
+    manifest_storage = RawManifestStorage(tmp_path / "manifest.json")
     events: list[tuple[str, dict[str, object]]] = []
 
     await pull(
         historical=Dataset("historical", "w9zh-vetq"),
         recent=Dataset("recent", "qzsc-9esp"),
         socrata=socrata,
-        raw=RawStorage(
+        raw_pages=RawPageStorage(
             tmp_path,
             clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
         ),
-        manifests=manifests,
+        manifest_storage=manifest_storage,
         page_size=2,
         clock=lambda: datetime(2026, 9, 21, tzinfo=UTC),
         progress=lambda event, values: events.append((event, values)),
@@ -87,13 +87,13 @@ async def test_pull_bootstraps_recent_then_historical_pages(tmp_path: Path) -> N
     assert (tmp_path / "recent/current/page-00000002.csv.gz").is_file()
     assert not (tmp_path / "recent/next").exists()
     assert (tmp_path / "historical/pages/page-00000001.csv.gz").is_file()
-    manifest = manifests.load()
+    manifest = manifest_storage.load()
     assert manifest is not None
     assert manifest.recent.newest_id == "row-r3"
     assert len(manifest.recent.pages) == 2
     assert manifest.historical.cursor == "row-h3"
     assert len(manifest.historical.pages) == 2
-    assert [values["dataset"] for _, values in events] == [
+    assert [values["dataset"] for event, values in events if event == "PAGE"] == [
         "recent",
         "recent",
         "historical",
@@ -126,19 +126,19 @@ async def test_pull_checkpoints_each_historical_page_before_fetching_the_next(
                 yield compressed(b":id,fecha_corte,value\n")
                 raise ConnectionError("response ended early")
 
-    manifests = SyncManifestStorage(tmp_path / "manifest.json")
+    manifest_storage = RawManifestStorage(tmp_path / "manifest.json")
 
     with pytest.raises(ConnectionError, match="response ended early"):
         await pull(
             historical=Dataset("historical", "w9zh-vetq"),
             recent=Dataset("recent", "qzsc-9esp"),
             socrata=FailingHistorical(),
-            raw=RawStorage(tmp_path),
-            manifests=manifests,
+            raw_pages=RawPageStorage(tmp_path),
+            manifest_storage=manifest_storage,
             page_size=1,
         )
 
-    manifest = manifests.load()
+    manifest = manifest_storage.load()
     assert manifest is not None
     assert manifest.historical.cursor == "row-h1"
     assert len(manifest.historical.pages) == 1
@@ -150,14 +150,14 @@ async def test_pull_skips_unchanged_recent_and_resumes_historical(
 ) -> None:
     historical = Dataset("historical", "w9zh-vetq")
     recent = Dataset("recent", "qzsc-9esp")
-    manifests = SyncManifestStorage(tmp_path / "manifest.json")
-    raw = RawStorage(tmp_path)
+    manifest_storage = RawManifestStorage(tmp_path / "manifest.json")
+    raw_pages = RawPageStorage(tmp_path)
     await pull(
         historical=historical,
         recent=recent,
         socrata=Socrata(),
-        raw=raw,
-        manifests=manifests,
+        raw_pages=raw_pages,
+        manifest_storage=manifest_storage,
         page_size=2,
     )
 
@@ -173,20 +173,35 @@ async def test_pull_skips_unchanged_recent_and_resumes_historical(
             yield compressed(b":id,fecha_corte,value\n")
 
     unchanged = Unchanged()
+    events: list[tuple[str, dict[str, object]]] = []
     await pull(
         historical=historical,
         recent=recent,
         socrata=unchanged,
-        raw=raw,
-        manifests=manifests,
+        raw_pages=raw_pages,
+        manifest_storage=manifest_storage,
         page_size=2,
+        progress=lambda event, values: events.append((event, values)),
     )
 
     assert unchanged.operations == [
         ("newest", "recent"),
         ("historical", "row-h3"),
     ]
-    manifest = manifests.load()
+    assert events == [
+        ("CHECK", {"dataset": "recent", "operation": "newest_id"}),
+        ("UP_TO_DATE", {"dataset": "recent", "newest_id": "row-r3"}),
+        (
+            "CHECK",
+            {
+                "dataset": "historical",
+                "operation": "page_after_id",
+                "after_id": "row-h3",
+            },
+        ),
+        ("UP_TO_DATE", {"dataset": "historical", "cursor": "row-h3"}),
+    ]
+    manifest = manifest_storage.load()
     assert manifest is not None
     assert len(manifest.recent.pages) == 2
     assert len(manifest.historical.pages) == 2
@@ -197,14 +212,14 @@ async def test_pull_refuses_to_resume_past_a_missing_historical_page(
 ) -> None:
     historical = Dataset("historical", "w9zh-vetq")
     recent = Dataset("recent", "qzsc-9esp")
-    manifests = SyncManifestStorage(tmp_path / "manifest.json")
-    raw = RawStorage(tmp_path)
+    manifest_storage = RawManifestStorage(tmp_path / "manifest.json")
+    raw_pages = RawPageStorage(tmp_path)
     await pull(
         historical=historical,
         recent=recent,
         socrata=Socrata(),
-        raw=raw,
-        manifests=manifests,
+        raw_pages=raw_pages,
+        manifest_storage=manifest_storage,
         page_size=2,
     )
     (tmp_path / "historical/pages/page-00000001.csv.gz").unlink()
@@ -214,8 +229,8 @@ async def test_pull_refuses_to_resume_past_a_missing_historical_page(
             historical=historical,
             recent=recent,
             socrata=Socrata(),
-            raw=raw,
-            manifests=manifests,
+            raw_pages=raw_pages,
+            manifest_storage=manifest_storage,
             page_size=2,
         )
 
@@ -225,14 +240,14 @@ async def test_pull_preserves_current_recent_when_next_download_fails(
 ) -> None:
     historical = Dataset("historical", "w9zh-vetq")
     recent = Dataset("recent", "qzsc-9esp")
-    manifests = SyncManifestStorage(tmp_path / "manifest.json")
-    raw = RawStorage(tmp_path)
+    manifest_storage = RawManifestStorage(tmp_path / "manifest.json")
+    raw_pages = RawPageStorage(tmp_path)
     await pull(
         historical=historical,
         recent=recent,
         socrata=Socrata(),
-        raw=raw,
-        manifests=manifests,
+        raw_pages=raw_pages,
+        manifest_storage=manifest_storage,
         page_size=2,
     )
     current = tmp_path / "recent/current/page-00000001.csv.gz"
@@ -262,13 +277,13 @@ async def test_pull_preserves_current_recent_when_next_download_fails(
             historical=historical,
             recent=recent,
             socrata=FailingRecent(),
-            raw=raw,
-            manifests=manifests,
+            raw_pages=raw_pages,
+            manifest_storage=manifest_storage,
             page_size=1,
         )
 
     assert current.read_bytes() == original
     assert (tmp_path / "recent/next/page-00000001.csv.gz").is_file()
-    manifest = manifests.load()
+    manifest = manifest_storage.load()
     assert manifest is not None
     assert manifest.recent.newest_id == "row-r3"

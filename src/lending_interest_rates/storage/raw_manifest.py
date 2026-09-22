@@ -4,58 +4,58 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
-from .raw import ReportingDateCount, StoredPage
+from .raw_pages import RawPage, ReportingDateCount
 
 
 @dataclass(frozen=True)
-class HistoricalState:
+class HistoricalSourceState:
     dataset_id: str
     cursor: str | None
-    pages: tuple[StoredPage, ...] = ()
+    pages: tuple[RawPage, ...] = ()
 
 
 @dataclass(frozen=True)
-class RecentState:
+class RecentSourceState:
     dataset_id: str
     newest_id: str | None
-    pages: tuple[StoredPage, ...] = ()
+    pages: tuple[RawPage, ...] = ()
 
 
 @dataclass(frozen=True)
-class SyncManifest:
+class RawManifest:
     updated_at: datetime
-    historical: HistoricalState
-    recent: RecentState
+    historical: HistoricalSourceState
+    recent: RecentSourceState
 
 
-class SyncManifestStorage:
+class RawManifestStorage:
     def __init__(self, path: Path) -> None:
         self.path = path
 
-    def load(self) -> SyncManifest | None:
+    def load(self) -> RawManifest | None:
         if not self.path.exists():
             return None
         document = cast(dict[str, object], json.loads(self.path.read_text()))
         if document.get("version") != 2:
-            raise ValueError("Unsupported pull manifest version")
+            raise ValueError("Unsupported raw manifest version")
         sources = cast(dict[str, dict[str, object]], document["sources"])
         historical = sources["historical"]
         recent = sources["recent"]
-        return SyncManifest(
+        return RawManifest(
             updated_at=datetime.fromisoformat(cast(str, document["updated_at"])),
-            historical=HistoricalState(
+            historical=HistoricalSourceState(
                 dataset_id=cast(str, historical["dataset_id"]),
                 cursor=cast(str | None, historical.get("cursor")),
-                pages=parse_pages(historical),
+                pages=_parse_pages(historical),
             ),
-            recent=RecentState(
+            recent=RecentSourceState(
                 dataset_id=cast(str, recent["dataset_id"]),
                 newest_id=cast(str | None, recent.get("newest_id")),
-                pages=parse_pages(recent),
+                pages=_parse_pages(recent),
             ),
         )
 
-    def save(self, manifest: SyncManifest) -> None:
+    def save(self, manifest: RawManifest) -> None:
         document = {
             "version": 2,
             "updated_at": manifest.updated_at.isoformat(),
@@ -63,12 +63,12 @@ class SyncManifestStorage:
                 "historical": {
                     "dataset_id": manifest.historical.dataset_id,
                     "cursor": manifest.historical.cursor,
-                    "pages": page_documents(manifest.historical.pages),
+                    "pages": _page_documents(manifest.historical.pages),
                 },
                 "recent": {
                     "dataset_id": manifest.recent.dataset_id,
                     "newest_id": manifest.recent.newest_id,
-                    "pages": page_documents(manifest.recent.pages),
+                    "pages": _page_documents(manifest.recent.pages),
                 },
             },
         }
@@ -81,22 +81,22 @@ class SyncManifestStorage:
         partial.replace(self.path)
 
 
-def parse_pages(source: dict[str, object]) -> tuple[StoredPage, ...]:
+def _parse_pages(source: dict[str, object]) -> tuple[RawPage, ...]:
     return tuple(
-        StoredPage(
+        RawPage(
             path=cast(str, page["path"]),
             row_count=cast(int, page["rows"]),
-            size=cast(int, page["bytes"]),
+            size_bytes=cast(int, page["bytes"]),
             first_id=cast(str, page["first_id"]),
             last_id=cast(str, page["last_id"]),
             downloaded_at=datetime.fromisoformat(cast(str, page["downloaded_at"])),
-            reporting_dates=parse_reporting_dates(page),
+            reporting_dates=_parse_reporting_dates(page),
         )
         for page in cast(list[dict[str, object]], source.get("pages", []))
     )
 
 
-def parse_reporting_dates(
+def _parse_reporting_dates(
     page: dict[str, object],
 ) -> tuple[ReportingDateCount, ...]:
     counts = cast(dict[str, int], page["reporting_dates"])
@@ -109,12 +109,12 @@ def parse_reporting_dates(
     return reporting_dates
 
 
-def page_documents(pages: tuple[StoredPage, ...]) -> list[dict[str, object]]:
+def _page_documents(pages: tuple[RawPage, ...]) -> list[dict[str, object]]:
     return [
         {
             "path": page.path,
             "rows": page.row_count,
-            "bytes": page.size,
+            "bytes": page.size_bytes,
             "first_id": page.first_id,
             "last_id": page.last_id,
             "downloaded_at": page.downloaded_at.isoformat(),

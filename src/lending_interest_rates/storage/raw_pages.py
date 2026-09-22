@@ -15,17 +15,17 @@ class ReportingDateCount:
 
 
 @dataclass(frozen=True)
-class StoredPage:
+class RawPage:
     path: str
     row_count: int
-    size: int
+    size_bytes: int
     first_id: str
     last_id: str
     downloaded_at: datetime
     reporting_dates: tuple[ReportingDateCount, ...]
 
 
-class RawStorage:
+class RawPageStorage:
     def __init__(
         self,
         root: Path,
@@ -34,17 +34,17 @@ class RawStorage:
         self.root = root
         self.clock = clock
 
-    def is_complete(self, page: StoredPage) -> bool:
+    def is_complete(self, page: RawPage) -> bool:
         path = self.root / page.path
-        return path.is_file() and path.stat().st_size == page.size
+        return path.is_file() and path.stat().st_size == page.size_bytes
 
-    def discard_recent_next(self) -> None:
+    def discard_next_recent_generation(self) -> None:
         shutil.rmtree(self.root / "recent" / "next", ignore_errors=True)
 
-    def activate_recent(
+    def activate_next_recent_generation(
         self,
-        pages: tuple[StoredPage, ...],
-    ) -> tuple[StoredPage, ...]:
+        pages: tuple[RawPage, ...],
+    ) -> tuple[RawPage, ...]:
         recent = self.root / "recent"
         current = recent / "current"
         next_generation = recent / "next"
@@ -61,14 +61,14 @@ class RawStorage:
             for page in pages
         )
 
-    def discard_previous_recent(self) -> None:
+    def discard_previous_recent_generation(self) -> None:
         shutil.rmtree(self.root / "recent" / "previous", ignore_errors=True)
 
     async def write_historical_page(
         self,
         number: int,
         content: AsyncIterator[bytes],
-    ) -> StoredPage | None:
+    ) -> RawPage | None:
         output = self.root / "historical" / "pages" / f"page-{number:08d}.csv.gz"
         return await self._write_page(output, content)
 
@@ -76,7 +76,7 @@ class RawStorage:
         self,
         number: int,
         content: AsyncIterator[bytes],
-    ) -> StoredPage | None:
+    ) -> RawPage | None:
         output = self.root / "recent" / "next" / f"page-{number:08d}.csv.gz"
         return await self._write_page(output, content)
 
@@ -84,7 +84,7 @@ class RawStorage:
         self,
         output: Path,
         content: AsyncIterator[bytes],
-    ) -> StoredPage | None:
+    ) -> RawPage | None:
         output.parent.mkdir(parents=True, exist_ok=True)
         partial = output.with_suffix(f"{output.suffix}.partial")
         partial.unlink(missing_ok=True)
@@ -92,7 +92,7 @@ class RawStorage:
             with partial.open("wb") as stream:
                 async for chunk in content:
                     stream.write(chunk)
-            row_count, first_id, last_id, reporting_dates = inspect_page(partial)
+            row_count, first_id, last_id, reporting_dates = inspect_raw_page(partial)
             if first_id is None or last_id is None:
                 partial.unlink()
                 return None
@@ -100,10 +100,10 @@ class RawStorage:
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
-        return StoredPage(
+        return RawPage(
             path=str(output.relative_to(self.root)),
             row_count=row_count,
-            size=output.stat().st_size,
+            size_bytes=output.stat().st_size,
             first_id=first_id,
             last_id=last_id,
             downloaded_at=self.clock(),
@@ -111,7 +111,7 @@ class RawStorage:
         )
 
 
-def inspect_page(
+def inspect_raw_page(
     path: Path,
 ) -> tuple[
     int,
