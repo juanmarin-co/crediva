@@ -18,6 +18,12 @@ Test behavior through agreed public seams. Command tests should use lightweight 
 
 Work in small test-driven slices when changing behavior. Keep important data-integrity, concurrency, cancellation, and compatibility scenarios covered.
 
+# Domain language and CONTEXT.md
+
+Read the root `CONTEXT.md` when discussing or changing domain terminology. Use its Spanish terms consistently in code, data descriptions, and user-facing copy. If a proposed term conflicts with the glossary, point out the difference; clarify ambiguous terms with concrete examples and check claims against the source data and code.
+
+Update `CONTEXT.md` as soon as a domain term is resolved. Keep it a glossary, not a specification or an implementation log: a short context description followed by `## Language` or natural topic headings, with each entry formatted as `**Término**:`, a one- or two-sentence definition of what it is, and `_Evitar_:` for misleading alternatives. Define only project-specific concepts, prefer one canonical term per concept, and distinguish verified facts from interpretations. Do not add storage paths, implementation details, or unverified expansions of source codes.
+
 # Quality
 
 Use clear project vocabulary and conventional Python structure. Add dependencies only when they materially simplify the design. Keep documentation focused on the supported user surface rather than internal implementation details.

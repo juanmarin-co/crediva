@@ -84,7 +84,7 @@ Each partition contains one canonical Zstandard-compressed Parquet file with all
 
 ### Schema
 
-The publisher describes each row as a weekly aggregate of disbursed credit for one reporting entity and combination of borrower, product, term, guarantee, rate, geography, and economic-activity categories. Rows are not individual loans. The measures are the weighted-average effective rate, total amount, and number of credits disbursed during that week. For UVR products, rates from the 2023-09-29 cutoff onward exclude the change in UVR.
+The publisher describes each row as a weekly aggregate of disbursed credit for one reporting entity and combination of borrower, product, term, guarantee, rate, geography, and economic-activity categories. Rows are not individual credits. The measures are the weighted-average effective rate, total amount, and number of credits disbursed during that week. For UVR products, rates from the 2023-09-29 cutoff onward exclude the change in UVR.
 
 The Socrata title is the metadata `name`; `fieldName` is the identifier used by the API and raw CSV.
 
