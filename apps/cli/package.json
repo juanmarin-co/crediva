@@ -1,5 +1,5 @@
 {
-  "name": "@lending-interest-rates/cli",
+  "name": "@crediva/cli",
   "version": "0.1.0",
   "private": true,
   "bin": {

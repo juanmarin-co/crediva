@@ -8,11 +8,12 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 
 import { Dashboard } from "./routes/index";
 
-describe("dashboard scaffold", () => {
-  it("labels its example chart as synthetic data", () => {
+describe("CrediVá", () => {
+  it("labels its example chart as fictitious data", () => {
     const html = renderToStaticMarkup(<Dashboard />);
 
-    expect(html).toContain("Synthetic example data");
-    expect(html).toContain("No source data is connected yet");
+    expect(html).toContain("CrediVá");
+    expect(html).toContain("Datos de ejemplo ficticios");
+    expect(html).toContain("Aún no hay datos de la fuente conectados");
   });
 });

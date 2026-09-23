@@ -7,17 +7,22 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lending interest rates" },
+      { title: "CrediVá — Tasas de crédito en Colombia" },
+      {
+        name: "description",
+        content:
+          "Explora datos históricos agregados sobre tasas de interés de créditos en Colombia.",
+      },
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
-  notFoundComponent: () => <main>Page not found.</main>,
+  notFoundComponent: () => <main>Página no encontrada.</main>,
   shellComponent: RootDocument,
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="es">
       <head>
         <HeadContent />
       </head>

@@ -32,7 +32,7 @@ Require collaborators explicitly and provide them at the composition root. Do no
 
 # Dashboard UI
 
-In `apps/dash`, shadcn/ui components under `src/components/ui` are upstream-owned source. Never edit or format these files; compose them from application code instead. Resolve lint conflicts with scoped tooling configuration, not changes to generated components.
+The dashboard in `apps/dash` is named CrediVá (`crediva` in ASCII identifiers). In `apps/dash`, shadcn/ui components under `src/components/ui` are upstream-owned source. Never edit or format these files; compose them from application code instead. Resolve lint conflicts with scoped tooling configuration, not changes to generated components.
 
 # Quality
 

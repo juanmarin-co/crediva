@@ -22,39 +22,38 @@ import {
 export const Route = createFileRoute("/")({ component: Dashboard });
 
 const exampleData = [
-  { month: "Jan", series: 4.2 },
+  { month: "Ene", series: 4.2 },
   { month: "Feb", series: 4.6 },
   { month: "Mar", series: 4.4 },
-  { month: "Apr", series: 5.1 },
+  { month: "Abr", series: 5.1 },
   { month: "May", series: 4.9 },
   { month: "Jun", series: 5.3 },
 ];
 
 const chartConfig = {
-  series: { label: "Example series", color: "var(--chart-2)" },
+  series: { label: "Serie de ejemplo", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 export function Dashboard() {
   const [showSeries, setShowSeries] = useState(true);
-  let toggleLabel = "Show series";
+  let toggleLabel = "Mostrar serie";
   if (showSeries) {
-    toggleLabel = "Hide series";
+    toggleLabel = "Ocultar serie";
   }
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-10 px-6 py-12 sm:py-16">
       <header className="flex max-w-prose flex-col gap-4">
-        <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-          Lending interest rates
-        </h1>
+        <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">CrediVá</h1>
         <p className="text-lg leading-relaxed text-muted-foreground">
-          A space for exploring lending-rate data. No source data is connected yet.
+          Explora tasas de interés de créditos en Colombia. Aún no hay datos de la fuente
+          conectados.
         </p>
       </header>
       <Card>
         <CardHeader>
-          <CardTitle>Synthetic example data</CardTitle>
-          <CardDescription>Placeholder values for checking the chart integration.</CardDescription>
+          <CardTitle>Datos de ejemplo ficticios</CardTitle>
+          <CardDescription>Valores de prueba para comprobar la gráfica.</CardDescription>
           <CardAction>
             <Button variant="outline" onClick={() => setShowSeries((shown) => !shown)}>
               {toggleLabel}
@@ -73,11 +72,11 @@ export function Dashboard() {
           </ChartContainer>
         </CardContent>
         <CardFooter>
-          <p className="text-muted-foreground">Not actual lending-rate observations.</p>
+          <p className="text-muted-foreground">No son observaciones reales de tasas de crédito.</p>
         </CardFooter>
       </Card>
       <Link className="w-fit text-primary underline underline-offset-4" to="/about">
-        About this scaffold
+        Acerca de CrediVá
       </Link>
     </main>
   );
