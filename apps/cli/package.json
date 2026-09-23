@@ -1,0 +1,21 @@
+{
+  "name": "@lending-interest-rates/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "lending-interest-rates": "dist/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "rolldown -c",
+    "start": "node dist/cli.js",
+    "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@duckdb/node-api": "1.5.5-r.5",
+    "@logtape/logtape": "^2.3.6",
+    "cmd-ts": "^0.15.0"
+  }
+}
