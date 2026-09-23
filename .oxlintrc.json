@@ -1,1 +1,9 @@
-{ "rules": { "no-ternary": "error", "curly": ["error", "all"] } }
+{
+  "rules": { "no-ternary": "error", "curly": ["error", "all"] },
+  "overrides": [
+    {
+      "files": ["apps/dash/src/components/ui/**"],
+      "rules": { "no-ternary": "off" }
+    }
+  ]
+}

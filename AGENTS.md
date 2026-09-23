@@ -30,6 +30,10 @@ Keep related statements together. Use blank lines to separate independent steps,
 
 Require collaborators explicitly and provide them at the composition root. Do not use optional dependencies with fallback implementations.
 
+# Dashboard UI
+
+In `apps/dash`, shadcn/ui components under `src/components/ui` are upstream-owned source. Never edit or format these files; compose them from application code instead. Resolve lint conflicts with scoped tooling configuration, not changes to generated components.
+
 # Quality
 
 Use clear project vocabulary and conventional TypeScript structure. Add dependencies only when they materially simplify the design. Keep documentation focused on the supported user surface rather than internal implementation details.
