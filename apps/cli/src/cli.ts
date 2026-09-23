@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { configure, getLogger } from "@logtape/logtape";
 import { command, option, run, string, subcommands } from "cmd-ts";
 import { convert } from "./convert";
@@ -23,10 +22,14 @@ const app = subcommands({
       name: "pull",
       description: "pull raw Socrata data",
       args: {
-        rawPath: option({ long: "raw-path", type: string, defaultValue: () => "data/raw" }),
+        rawBucket: option({
+          long: "raw-bucket",
+          type: string,
+          defaultValue: () => "crediva-sfc-raw-data",
+        }),
         apiRoot: option({ long: "api-root", type: string, defaultValue: () => API_ROOT }),
       },
-      handler: async ({ rawPath, apiRoot }) => {
+      handler: async ({ rawBucket, apiRoot }) => {
         const controller = new AbortController();
         const onSigint = () => controller.abort("SIGINT");
         const onSigterm = () => controller.abort("SIGTERM");
@@ -34,15 +37,21 @@ const app = subcommands({
         process.once("SIGTERM", onSigterm);
 
         try {
+          const storage = await createR2Storage(
+            rawBucket,
+            "crediva-analytical-data",
+            controller.signal,
+          );
           await pull({
-            root: rawPath,
+            storage,
             socrata: new SocrataClient(apiRoot),
             signal: controller.signal,
             pageSize: PAGE_SIZE,
             clock,
             progress,
+            generationId: randomUUID,
           });
-          progress("COMPLETE", { manifest: join(rawPath, "manifest.json") });
+          progress("COMPLETE", { manifest: `r2://${rawBucket}/manifest.json` });
         } catch (error) {
           if (!controller.signal.aborted) {
             throw error;
@@ -77,35 +86,47 @@ const app = subcommands({
         }),
       },
       handler: async ({ rawBucket, parquetBucket }) => {
-        const accountId = requiredEnv("CLOUDFLARE_ACCOUNT_ID");
-        const token = requiredEnv("CLOUDFLARE_API_TOKEN");
-        const response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!response.ok) {
-          throw new Error(`Cloudflare token verification failed (${response.status})`);
-        }
-
-        const verified = (await response.json()) as { success: boolean; result?: { id?: string } };
-        if (!verified.success || !verified.result?.id) {
-          throw new Error("Cloudflare token verification returned no token ID");
-        }
-
-        const storage = new R2Storage({
-          accountId,
-          accessKeyId: verified.result.id,
-          secretAccessKey: createHash("sha256").update(token).digest("hex"),
-          endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+        const storage = await createR2Storage(
           rawBucket,
           parquetBucket,
-        });
+          new AbortController().signal,
+        );
         await convert({ storage, clock, progress });
         progress("COMPLETE", { manifest: `r2://${parquetBucket}/manifest.json` });
       },
     }),
   },
 });
+
+async function createR2Storage(
+  rawBucket: string,
+  parquetBucket: string,
+  signal: AbortSignal,
+): Promise<R2Storage> {
+  const accountId = requiredEnv("CLOUDFLARE_ACCOUNT_ID");
+  const token = requiredEnv("CLOUDFLARE_API_TOKEN");
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify`,
+    { headers: { Authorization: `Bearer ${token}` }, signal },
+  );
+  if (!response.ok) {
+    throw new Error(`Cloudflare token verification failed (${response.status})`);
+  }
+
+  const verified = (await response.json()) as { success: boolean; result?: { id?: string } };
+  if (!verified.success || !verified.result?.id) {
+    throw new Error("Cloudflare token verification returned no token ID");
+  }
+
+  return new R2Storage({
+    accountId,
+    accessKeyId: verified.result.id,
+    secretAccessKey: createHash("sha256").update(token).digest("hex"),
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    rawBucket,
+    parquetBucket,
+  });
+}
 
 function requiredEnv(name: string): string {
   const value = process.env[name];

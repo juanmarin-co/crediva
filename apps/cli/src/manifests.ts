@@ -1,5 +1,3 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { Page } from "./raw";
 
 export interface RawManifest {
@@ -33,22 +31,6 @@ export interface ParquetManifest {
   partitions: Partition[];
 }
 
-export async function save(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const partial = path + ".partial";
-  await writeFile(partial, JSON.stringify(value, null, 2) + "\n");
-  await rename(partial, path);
-}
-
-export async function rawManifest(path: string): Promise<RawManifest | null> {
-  const doc = await load<RawManifest>(path);
-  if (!doc) {
-    return null;
-  }
-
-  return parseRawManifest(doc);
-}
-
 export function parseRawManifest(doc: RawManifest): RawManifest {
   if (doc.version !== 2) {
     throw new Error("Unsupported raw manifest version");
@@ -77,16 +59,4 @@ export function parseParquetManifest(doc: ParquetManifest): ParquetManifest {
   }
 
   return doc;
-}
-
-async function load<T>(path: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(path, "utf8")) as T;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-
-    throw error;
-  }
 }

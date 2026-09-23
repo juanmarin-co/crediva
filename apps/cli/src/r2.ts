@@ -15,6 +15,8 @@ import {
   type RawManifest,
 } from "./manifests";
 import type { ConvertStorage, ObjectInfo } from "./convert";
+import type { RawStore } from "./pull";
+import { inspectPage, timestamp, type Page } from "./raw";
 
 export interface R2Config {
   accountId: string;
@@ -25,7 +27,7 @@ export interface R2Config {
   parquetBucket: string;
 }
 
-export class R2Storage implements ConvertStorage {
+export class R2Storage implements ConvertStorage, RawStore {
   private readonly client: S3Client;
 
   constructor(private readonly config: R2Config) {
@@ -38,7 +40,7 @@ export class R2Storage implements ConvertStorage {
   }
 
   async readRaw(): Promise<RawManifest | null> {
-    const document = await this.readManifest<RawManifest>(this.config.rawBucket);
+    const document = await this.loadManifest<RawManifest>(this.config.rawBucket);
     if (!document) {
       return null;
     }
@@ -47,7 +49,7 @@ export class R2Storage implements ConvertStorage {
   }
 
   async readParquet(): Promise<ParquetManifest | null> {
-    const document = await this.readManifest<ParquetManifest>(this.config.parquetBucket);
+    const document = await this.loadManifest<ParquetManifest>(this.config.parquetBucket);
     if (!document) {
       return null;
     }
@@ -56,11 +58,89 @@ export class R2Storage implements ConvertStorage {
   }
 
   rawObjects(): Promise<Map<string, ObjectInfo>> {
-    return this.list(this.config.rawBucket);
+    return this.objects(this.config.rawBucket);
   }
 
   parquetObjects(): Promise<Map<string, ObjectInfo>> {
-    return this.list(this.config.parquetBucket);
+    return this.objects(this.config.parquetBucket);
+  }
+
+  async readManifest(): Promise<RawManifest | null> {
+    return this.readRaw();
+  }
+
+  async saveManifest(manifest: RawManifest, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.config.rawBucket,
+        Key: "manifest.json",
+        Body: JSON.stringify(manifest, null, 2) + "\n",
+        ContentType: "application/json",
+      }),
+      { abortSignal: signal },
+    );
+  }
+
+  async list(): Promise<Map<string, number>> {
+    const objects = await this.objects(this.config.rawBucket);
+    return new Map([...objects].map(([key, info]) => [key, info.bytes]));
+  }
+
+  async write(
+    path: string,
+    chunks: AsyncIterable<Uint8Array>,
+    signal: AbortSignal,
+    clock: () => Date,
+  ): Promise<Page | null> {
+    const buffers: Buffer[] = [];
+    for await (const chunk of chunks) {
+      signal.throwIfAborted();
+      buffers.push(Buffer.from(chunk));
+    }
+
+    signal.throwIfAborted();
+    const bytes = Buffer.concat(buffers);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.config.rawBucket,
+        Key: path,
+        Body: bytes,
+      }),
+      { abortSignal: signal },
+    );
+
+    try {
+      const details = await withDuckDB(async (db) => {
+        await db.run("INSTALL httpfs");
+        await db.run("LOAD httpfs");
+        await db.run("CREATE SECRET crediva_r2 (TYPE r2, KEY_ID ?, SECRET ?, ACCOUNT_ID ?)", [
+          this.config.accessKeyId,
+          this.config.secretAccessKey,
+          this.config.accountId,
+        ]);
+        return inspectPage(this.uri(this.config.rawBucket, path), db);
+      });
+      if (!details) {
+        await this.deleteRawPage(path);
+        return null;
+      }
+
+      signal.throwIfAborted();
+      return { path, bytes: bytes.length, ...details, downloaded_at: timestamp(clock()) };
+    } catch (error) {
+      await this.deleteRawPage(path);
+      throw error;
+    }
+  }
+
+  async pruneRecent(active: ReadonlySet<string>): Promise<void> {
+    const objects = await this.objects(this.config.rawBucket, "recent/");
+    for (const path of objects.keys()) {
+      if (!active.has(path)) {
+        await this.deleteRawPage(path);
+      }
+    }
   }
 
   async convertMonth(
@@ -121,7 +201,11 @@ export class R2Storage implements ConvertStorage {
     );
   }
 
-  private async readManifest<T>(bucket: string): Promise<T | null> {
+  private async deleteRawPage(path: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.config.rawBucket, Key: path }));
+  }
+
+  private async loadManifest<T>(bucket: string): Promise<T | null> {
     try {
       const object = await this.client.send(
         new GetObjectCommand({ Bucket: bucket, Key: "manifest.json" }),
@@ -140,12 +224,16 @@ export class R2Storage implements ConvertStorage {
     }
   }
 
-  private async list(bucket: string): Promise<Map<string, ObjectInfo>> {
+  private async objects(bucket: string, prefix = ""): Promise<Map<string, ObjectInfo>> {
     const objects = new Map<string, ObjectInfo>();
     let continuation: string | undefined;
     do {
       const response = await this.client.send(
-        new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: continuation }),
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuation,
+        }),
       );
       for (const object of response.Contents ?? []) {
         if (object.Key && object.Size !== undefined && object.ETag) {

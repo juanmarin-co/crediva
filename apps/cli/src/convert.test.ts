@@ -125,7 +125,7 @@ test("convert rejects overlapping source dates without publishing Parquet", asyn
         recent: {
           dataset_id: "qzsc-9esp",
           newest_id: "3",
-          pages: [{ ...page, path: "recent/current/page-00000001.csv.gz" }],
+          pages: [{ ...page, path: "recent/generation-g1/page-00000001.csv.gz" }],
         },
       },
     };
@@ -133,7 +133,7 @@ test("convert rejects overlapping source dates without publishing Parquet", asyn
   storage.rawObjects = async () =>
     new Map([
       [page.path, { bytes: 70, etag: "raw-etag" }],
-      ["recent/current/page-00000001.csv.gz", { bytes: 70, etag: "recent-etag" }],
+      ["recent/generation-g1/page-00000001.csv.gz", { bytes: 70, etag: "recent-etag" }],
     ]);
 
   await expect(convert({ storage, clock: () => new Date(), progress: () => {} })).rejects.toThrow(

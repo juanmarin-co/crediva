@@ -7,16 +7,10 @@ The dashboard chart currently shows fictitious values, not current credit offers
 ## Pulling data
 
 ```bash
-node apps/cli/dist/cli.js pull
+node --env-file=.env apps/cli/dist/cli.js pull
 ```
 
-Use a different destination when needed:
-
-```bash
-node apps/cli/dist/cli.js pull --raw-path data/raw
-```
-
-Progress is written to stderr as structured `EVENT key=value` lines.
+Set `CLOUDFLARE_ACCOUNT_ID` and an R2 Object Read & Write `CLOUDFLARE_API_TOKEN` in your ignored `.env`. By default, raw pages go to the root of `crediva-sfc-raw-data`; use `--raw-bucket` to choose another bucket. Progress is written to stderr as structured `EVENT key=value` lines.
 
 ## Sources
 
@@ -30,21 +24,15 @@ The historical resource behaves as an append-only sequence. The recent resource 
 ## Storage
 
 ```text
-data/raw/
+crediva-sfc-raw-data/
 ├── manifest.json
-├── historical/
-│   └── pages/
-│       ├── page-00000001.csv.gz
-│       └── page-00000002.csv.gz
-└── recent/
-    └── current/
-        ├── page-00000001.csv.gz
-        └── page-00000002.csv.gz
+├── historical/pages/page-00000001.csv.gz
+└── recent/generation-<id>/page-00000001.csv.gz
 ```
 
 Both sources are stored in gzip-compressed CSV pages of at most 50,000 records, ordered by Socrata's intrinsic `:id`. Socrata's gzip response bytes are persisted directly without client decompression or local recompression. Query pages preserve API field names and the `:id`, `:version`, `:created_at`, and `:updated_at` system columns.
 
-The manifest records the path, size, row count, ID boundaries, download time, and exact row counts by `fecha_corte` for every active page. These reporting-date counts form an index for selecting the minimal raw-page set needed to rebuild a monthly projection; synchronization still relies only on intrinsic IDs. Historical also records its append cursor, while recent records the newest ID used for change detection. File and manifest writes use `.partial` files and atomic replacement.
+The manifest records the path, size, row count, ID boundaries, download time, and exact row counts by `fecha_corte` for every active page. These reporting-date counts form an index for selecting the minimal raw-page set needed to rebuild a monthly projection; synchronization still relies only on intrinsic IDs. Historical also records its append cursor, while recent records the newest ID used for change detection. The manifest is the commit pointer: pages are uploaded and validated before they are referenced. Only one writer may pull at a time.
 
 ## Synchronization protocol
 
@@ -57,21 +45,19 @@ ORDER BY `:id`
 LIMIT 50000
 ```
 
-The initial request omits the `WHERE` clause. Every completed page is written durably before its final ID is checkpointed. A response containing fewer than 50,000 records ends the pull; an empty response creates no page.
+The initial request omits the `WHERE` clause. Every completed page is validated in R2 before its final ID is checkpointed in the manifest. A response containing fewer than 50,000 records ends the pull; an empty response creates no page.
 
-For the recent source, `pull` first requests its newest intrinsic ID. If that ID differs from the active generation, it downloads a complete set of `query.csv` pages from the beginning into `recent/next`. Pagination state remains in memory. After the final short page, `next` replaces `current` and the manifest records the new active pages and newest ID.
-
-Interrupted historical pulls resume after the last committed page. Interrupted recent downloads retain `current`; the incomplete `next` directory is discarded and downloaded again on the next pull. No retries are performed automatically.
+For the recent source, `pull` first requests its newest intrinsic ID. When it changes, the CLI uploads and validates a complete replacement under `recent/generation-<id>/`. It then switches the active page list by writing the manifest and removes the old generation afterward. An existing `recent/current/` snapshot is migrated on the next pull even if its newest ID has not changed. A failed refresh leaves the active snapshot referenced by the manifest; interrupted historical pulls resume from the last committed page. Orphaned recent pages are removed on the next pull. No retries are performed automatically. Do not run `convert` concurrently with `pull` while old generations may be removed.
 
 ## Parquet collection
 
-First sync completed `data/raw/` to the root of the private `crediva-sfc-raw-data` R2 bucket (for example, with `aws s3 sync`), then upload its `manifest.json` last. After building the CLI, convert directly from that bucket to the private `crediva-analytical-data` bucket:
+After pulling raw data, convert directly from the raw bucket to the private `crediva-analytical-data` bucket:
 
 ```bash
 node --env-file=.env apps/cli/dist/cli.js convert
 ```
 
-Set `CLOUDFLARE_ACCOUNT_ID` and an R2 Object Read & Write `CLOUDFLARE_API_TOKEN` in your ignored `.env`. Use `--raw-bucket` and `--parquet-bucket` for other bucket names. DuckDB reads selected raw pages via R2 and writes each changed month directly to the root of the analytical bucket. It limits managed memory to 8 GB; no local Parquet staging directory is used. Structured `READ`, `WRITE`, and `DELETE` events report incremental work.
+Use `--raw-bucket` and `--parquet-bucket` for other bucket names. DuckDB reads selected raw pages via R2 and writes each changed month directly to the root of the analytical bucket. It limits managed memory to 8 GB; no local Parquet staging directory is used. Structured `READ`, `WRITE`, and `DELETE` events report incremental work.
 
 The analytical collection is unified across both Socrata sources and partitioned by reporting month:
 
@@ -132,7 +118,7 @@ Rows are sorted ascending by `reporting_date`, `credit_product`, `entity_type_co
 
 ## Development
 
-Tests exercise commands through boundary implementations, Socrata and R2 communication through local HTTP servers, and raw storage through temporary directories.
+Tests exercise commands through boundary implementations, Socrata and R2 communication through local HTTP servers, and page validation through temporary directories.
 
 Run the project checks with:
 

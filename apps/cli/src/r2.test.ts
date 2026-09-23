@@ -82,3 +82,66 @@ test("R2 storage reads manifests, paginates object metadata, and publishes the m
     await once(server, "close");
   }
 });
+
+test("R2 raw storage removes only unreferenced recent pages", async () => {
+  const deleted: string[] = [];
+  let saved = "";
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url!, "http://localhost");
+    if (request.method === "GET" && url.searchParams.get("list-type") === "2") {
+      response.setHeader("Content-Type", "application/xml");
+      response.end(`<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+        <IsTruncated>false</IsTruncated>
+        <Contents><Key>recent/generation-old/page-00000001.csv.gz</Key><Size>10</Size><ETag>"old"</ETag></Contents>
+        <Contents><Key>recent/generation-active/page-00000001.csv.gz</Key><Size>10</Size><ETag>"active"</ETag></Contents>
+      </ListBucketResult>`);
+    } else if (request.method === "DELETE") {
+      deleted.push(url.pathname);
+      response.writeHead(204).end();
+    } else if (request.method === "PUT" && url.pathname === "/raw/manifest.json") {
+      saved = await new Promise<string>((resolve) => {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk: string) => (body += chunk));
+        request.on("end", () => resolve(body));
+      });
+      response.end();
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("No server port");
+  }
+
+  try {
+    const storage = new R2Storage({
+      accountId: "test",
+      accessKeyId: "test",
+      secretAccessKey: "test",
+      endpoint: `http://127.0.0.1:${address.port}`,
+      rawBucket: "raw",
+      parquetBucket: "analytical",
+    });
+    await storage.pruneRecent(new Set(["recent/generation-active/page-00000001.csv.gz"]));
+    await storage.saveManifest(
+      {
+        version: 2,
+        updated_at: "today",
+        sources: {
+          historical: { dataset_id: "w9zh-vetq", cursor: null, pages: [] },
+          recent: { dataset_id: "qzsc-9esp", newest_id: "1", pages: [] },
+        },
+      },
+      new AbortController().signal,
+    );
+    expect(deleted).toEqual(["/raw/recent/generation-old/page-00000001.csv.gz"]);
+    expect(JSON.parse(saved).version).toBe(2);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
