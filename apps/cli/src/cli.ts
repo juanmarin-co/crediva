@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { configure, getLogger } from "@logtape/logtape";
 import { command, option, run, string, subcommands } from "cmd-ts";
 import { convert } from "./convert";
 import { pull, type Progress } from "./pull";
+import { R2Storage } from "./r2";
 import { API_ROOT, SocrataClient } from "./socrata";
 
 const PAGE_SIZE = 50_000;
@@ -61,23 +63,58 @@ const app = subcommands({
     }),
     convert: command({
       name: "convert",
-      description: "convert raw data to Parquet",
+      description: "convert raw R2 data to monthly Parquet in R2",
       args: {
-        rawPath: option({ long: "raw-path", type: string, defaultValue: () => "data/raw" }),
-        parquetPath: option({
-          long: "parquet-path",
+        rawBucket: option({
+          long: "raw-bucket",
           type: string,
-          defaultValue: () => "data/parquet",
+          defaultValue: () => "crediva-sfc-raw-data",
+        }),
+        parquetBucket: option({
+          long: "parquet-bucket",
+          type: string,
+          defaultValue: () => "crediva-analytical-data",
         }),
       },
-      handler: async ({ rawPath, parquetPath }) => {
-        await convert({ rawPath, parquetPath, clock, progress });
+      handler: async ({ rawBucket, parquetBucket }) => {
+        const accountId = requiredEnv("CLOUDFLARE_ACCOUNT_ID");
+        const token = requiredEnv("CLOUDFLARE_API_TOKEN");
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) {
+          throw new Error(`Cloudflare token verification failed (${response.status})`);
+        }
 
-        progress("COMPLETE", { manifest: join(parquetPath, "manifest.json") });
+        const verified = (await response.json()) as { success: boolean; result?: { id?: string } };
+        if (!verified.success || !verified.result?.id) {
+          throw new Error("Cloudflare token verification returned no token ID");
+        }
+
+        const storage = new R2Storage({
+          accountId,
+          accessKeyId: verified.result.id,
+          secretAccessKey: createHash("sha256").update(token).digest("hex"),
+          endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+          rawBucket,
+          parquetBucket,
+        });
+        await convert({ storage, clock, progress });
+        progress("COMPLETE", { manifest: `r2://${parquetBucket}/manifest.json` });
       },
     }),
   },
 });
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing ${name}`);
+  }
+
+  return value;
+}
 
 await configure({
   sinks: {

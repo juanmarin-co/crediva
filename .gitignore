@@ -9,8 +9,9 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# Virtual environments and local credentials
 .venv
+.env
 
 # Test artifacts
 .coverage

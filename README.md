@@ -1,6 +1,6 @@
 # CrediVá
 
-CrediVá (`crediva` in ASCII identifiers) is a pnpm monorepo for acquiring and exploring historical lending-interest-rate data in Colombia. Its Node.js 24+ TypeScript CLI (`apps/cli`) retrieves data from the government Socrata portal and builds a local analytical collection. Its dashboard (`apps/dash`) previews how to explore aggregated rates. Install dependencies with `pnpm install` and build with `pnpm build`.
+CrediVá (`crediva` in ASCII identifiers) is a pnpm monorepo for acquiring and exploring historical lending-interest-rate data in Colombia. Its Node.js 24+ TypeScript CLI (`apps/cli`) retrieves data from the government Socrata portal and builds an R2-backed analytical collection. Its dashboard (`apps/dash`) previews how to explore aggregated rates. Install dependencies with `pnpm install` and build with `pnpm build`.
 
 The dashboard chart currently shows fictitious values, not current credit offers or source observations. See [`apps/dash/README.md`](apps/dash/README.md) to run it.
 
@@ -65,24 +65,25 @@ Interrupted historical pulls resume after the last committed page. Interrupted r
 
 ## Parquet collection
 
-Convert raw pages into the analytical collection:
+First sync completed `data/raw/` to the root of the private `crediva-sfc-raw-data` R2 bucket (for example, with `aws s3 sync`), then upload its `manifest.json` last. After building the CLI, convert directly from that bucket to the private `crediva-analytical-data` bucket:
 
 ```bash
-node apps/cli/dist/cli.js convert
+node --env-file=.env apps/cli/dist/cli.js convert
 ```
 
-Use `--raw-path` and `--parquet-path` to override the default `data/raw` and `data/parquet` locations. Conversion uses DuckDB Node Neo to read candidate raw pages and write each changed month to a staged Parquet file. DuckDB limits managed memory to 8 GB. Structured `READ`, `WRITE`, and `DELETE` events report every data or manifest file used or changed, making incremental work observable.
+Set `CLOUDFLARE_ACCOUNT_ID` and an R2 Object Read & Write `CLOUDFLARE_API_TOKEN` in your ignored `.env`. Use `--raw-bucket` and `--parquet-bucket` for other bucket names. DuckDB reads selected raw pages via R2 and writes each changed month directly to the root of the analytical bucket. It limits managed memory to 8 GB; no local Parquet staging directory is used. Structured `READ`, `WRITE`, and `DELETE` events report incremental work.
 
 The analytical collection is unified across both Socrata sources and partitioned by reporting month:
 
 ```text
-data/parquet/
+crediva-analytical-data/
+├── manifest.json
 └── reporting_year=2026/
     └── reporting_month=09/
         └── data.parquet
 ```
 
-Each partition contains one canonical Zstandard-compressed Parquet file with all business rows for that month. Socrata IDs, versions, timestamps, and source labels remain in raw storage and are not projected into Parquet. Conversion fails if historical and recent contain the same reporting date, because removing provenance would otherwise make those rows ambiguous. When raw data changes, conversion compares the page metadata recorded in `data/parquet/manifest.json` with the raw manifest, uses the `reporting_dates` index to read the exact candidate pages, rebuilds only affected months in staging, validates their expected row counts, and atomically replaces their `data.parquet` files. No content fingerprint is maintained.
+Each partition contains one canonical Zstandard-compressed Parquet file with all business rows for that month. Socrata IDs, versions, timestamps, and source labels remain in raw storage and are not projected into Parquet. Conversion fails if historical and recent contain the same reporting date, because removing provenance would otherwise make those rows ambiguous. It compares the raw-page inputs by reporting month and uses R2 object listings to check raw sizes and analytical partition sizes and ETags. It rebuilds only changed or incomplete months, validates row counts before overwriting, then writes the version 2 analytical manifest last. There is no collection-wide atomic commit: pause queries during conversion, and after a failure retry successfully before reading the collection.
 
 ### Schema
 
@@ -131,7 +132,7 @@ Rows are sorted ascending by `reporting_date`, `credit_product`, `entity_type_co
 
 ## Development
 
-Tests exercise commands through boundary implementations, Socrata through a local HTTP server, and storage through temporary directories.
+Tests exercise commands through boundary implementations, Socrata and R2 communication through local HTTP servers, and raw storage through temporary directories.
 
 Run the project checks with:
 
