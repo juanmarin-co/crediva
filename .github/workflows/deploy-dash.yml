@@ -1,14 +1,15 @@
 name: Deploy dashboard
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
   group: deploy-dash
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
