@@ -1,8 +1,8 @@
-# Lending Interest Rates
+# CrediVá
 
-This pnpm monorepo provides a Node.js 24+ TypeScript CLI (`apps/cli`) for replicating Colombian lending-interest-rate data from the government Socrata portal. It also includes **CrediVá** (`apps/dash`), a dashboard scaffold for exploring historical aggregated credit-rate data. Install dependencies with `pnpm install` and build with `pnpm build`.
+CrediVá (`crediva` in ASCII identifiers) is a pnpm monorepo for acquiring and exploring historical lending-interest-rate data in Colombia. Its Node.js 24+ TypeScript CLI (`apps/cli`) retrieves data from the government Socrata portal and builds a local analytical collection. Its dashboard (`apps/dash`) previews how to explore aggregated rates. Install dependencies with `pnpm install` and build with `pnpm build`.
 
-The CrediVá chart currently shows fictitious values, not current credit offers or source observations. See [`apps/dash/README.md`](apps/dash/README.md) to run the dashboard.
+The dashboard chart currently shows fictitious values, not current credit offers or source observations. See [`apps/dash/README.md`](apps/dash/README.md) to run it.
 
 ## Pulling data
 

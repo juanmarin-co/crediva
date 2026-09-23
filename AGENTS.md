@@ -1,6 +1,6 @@
 # Project
 
-This project provides a TypeScript CLI for acquiring and working with Colombian lending-interest-rate data. Use Node.js 24 or newer and manage the pnpm monorepo with `pnpm`. The CLI lives in `apps/cli`.
+CrediVá is a pnpm monorepo for acquiring and exploring Colombian lending-interest-rate data. It includes a TypeScript CLI in `apps/cli` and a dashboard in `apps/dash`. Use Node.js 24 or newer and manage the monorepo with `pnpm`.
 
 # Design
 
@@ -32,7 +32,7 @@ Require collaborators explicitly and provide them at the composition root. Do no
 
 # Dashboard UI
 
-The dashboard in `apps/dash` is named CrediVá (`crediva` in ASCII identifiers). In `apps/dash`, shadcn/ui components under `src/components/ui` are upstream-owned source. Never edit or format these files; compose them from application code instead. Resolve lint conflicts with scoped tooling configuration, not changes to generated components.
+The project is named CrediVá (`crediva` in ASCII identifiers). In `apps/dash`, shadcn/ui components under `src/components/ui` are upstream-owned source. Never edit or format these files; compose them from application code instead. Resolve lint conflicts with scoped tooling configuration, not changes to generated components.
 
 # Quality
 
